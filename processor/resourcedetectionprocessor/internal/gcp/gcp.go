@@ -5,6 +5,7 @@ package gcp // import "github.com/open-telemetry/opentelemetry-collector-contrib
 
 import (
 	"context"
+	"encoding/json"
 
 	"cloud.google.com/go/compute/metadata"
 	"github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp"
@@ -50,6 +51,18 @@ type detector struct {
 	logger   *zap.Logger
 	detector gcpDetector
 	rb       *localMetadata.ResourceBuilder
+}
+
+func(d *detector) GCECustomMetadata(ctx context.Context) (map[string]interface{}, error) {
+	jsonStr, err := metadata.GetWithContext(ctx, "instance/attributes/?recursive=true&alt=json")
+	if err != null {
+		return nil, err
+	}
+	vars attrs map[string]interface{}
+	if err := json.Unmarshall([]byte(jsonStr), &attrs); err != nil {
+		return nil, err
+	}
+	return attrs, nil
 }
 
 func (d *detector) Detect(context.Context) (resource pcommon.Resource, schemaURL string, err error) {
@@ -155,6 +168,11 @@ func (d *detector) Detect(context.Context) (resource pcommon.Resource, schemaURL
 			d.rb.SetFromCallable(d.rb.SetGcpGceInstanceName, d.detector.GCEInstanceName),
 			d.rb.SetManagedInstanceGroup(d.detector.GCEManagedInstanceGroup),
 		)
+		if attrs, err := d.GCECustomMetadata(ctx); err == nil {
+			d.rb.SetMyCustomMetadata(attrs)
+		} else {
+			d.logger.Warn("Failed to get GCE custom metadata", zap.Error(err))
+		}
 	default:
 		// We don't support this platform yet, so just return with what we have
 	}
